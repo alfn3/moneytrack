@@ -166,3 +166,46 @@ interface AIHistoryDao {
     @Query("SELECT * FROM ai_history ORDER BY timestamp ASC")
     suspend fun getAllHistoryList(): List<AIHistoryEntity>
 }
+
+@Dao
+interface AILearningRuleDao{
+
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(
+        rule:AILearningRuleEntity
+    )
+
+
+    @Update
+    suspend fun update(
+        rule:AILearningRuleEntity
+    )
+
+
+    @Query("""
+SELECT *
+FROM ai_learning_rules
+WHERE keyword=:keyword
+LIMIT 1
+""")
+    suspend fun getRule(
+        keyword:String
+    ):AILearningRuleEntity?
+
+
+
+    @Query("""
+SELECT *
+FROM ai_learning_rules
+ORDER BY
+confidence DESC,
+frequency DESC,
+lastUsed DESC
+LIMIT 30
+""")
+    suspend fun getTopRules():
+            List<AILearningRuleEntity>
+
+
+}

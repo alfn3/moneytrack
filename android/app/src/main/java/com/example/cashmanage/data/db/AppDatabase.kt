@@ -17,9 +17,10 @@ import androidx.room.RoomDatabase
         SheetEntity::class,
         CellEntity::class,
         AIHistoryEntity::class,
-        OCRHistoryEntity::class
+        OCRHistoryEntity::class,
+        AILearningRuleEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -31,6 +32,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun budgetDao(): BudgetDao
     abstract fun spreadsheetDao(): SpreadsheetDao
     abstract fun aiHistoryDao(): AIHistoryDao
+    abstract fun aiLearningDao():AILearningRuleDao
 
     companion object {
         @Volatile

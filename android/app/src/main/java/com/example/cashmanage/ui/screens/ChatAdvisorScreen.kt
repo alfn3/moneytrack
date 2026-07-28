@@ -1,18 +1,14 @@
 package com.example.cashmanage.ui.screens
 
+
 import android.Manifest
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.net.Uri
 import android.os.Bundle
-import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
-import com.example.cashmanage.ui.util.showCustomToast
-import com.example.cashmanage.ui.util.ToastType
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -20,389 +16,704 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.example.cashmanage.BuildConfig
-import com.google.ai.client.generativeai.GenerativeModel
-import com.google.ai.client.generativeai.type.content
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.cashmanage.ui.viewmodel.AIChatViewModel
 import kotlinx.coroutines.launch
 import java.io.InputStream
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.cashmanage.ui.viewmodel.FinancialViewModel
-import com.google.ai.client.generativeai.type.Tool
-import com.google.ai.client.generativeai.type.FunctionType
-import com.google.ai.client.generativeai.type.Schema
-import com.google.ai.client.generativeai.type.defineFunction
-import androidx.work.WorkManager
-import androidx.work.OneTimeWorkRequestBuilder
-import com.example.cashmanage.worker.SyncWorker
-import org.json.JSONObject
+
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatAdvisorScreen(
-    onBack: () -> Unit,
-    viewModel: FinancialViewModel = viewModel()
-) {
+    onBack:()->Unit,
+    viewModel:AIChatViewModel = viewModel()
+){
+
     val context = LocalContext.current
+
+    val state by viewModel.state.collectAsState()
+
+
+    var input by remember {
+        mutableStateOf("")
+    }
+
+
+    var selectedBitmap by remember {
+        mutableStateOf<Bitmap?>(null)
+    }
+
+
+    var isListening by remember {
+        mutableStateOf(false)
+    }
+
+
     val scope = rememberCoroutineScope()
-    var input by remember { mutableStateOf("") }
-    
-    // UI State for Chat
-    data class ChatMessage(val text: String, val isUser: Boolean, val imageUri: Uri? = null, val bitmap: Bitmap? = null)
-    val messages = remember { mutableStateListOf<ChatMessage>() }
-    var isTyping by remember { mutableStateOf(false) }
-    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
-    var selectedBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var showGuidelineDialog by remember { mutableStateOf(false) }
 
-    // Load History
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            val history = com.example.cashmanage.data.db.AppDatabase.getDatabase(context).aiHistoryDao().getAllHistoryList()
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                history.forEach { h ->
-                    messages.add(ChatMessage(h.prompt, true))
-                    messages.add(ChatMessage(h.response, false))
+
+
+    /*
+        IMAGE PICKER
+     */
+
+    val imagePicker =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.GetContent()
+        ){ uri ->
+
+            uri?.let {
+
+
+                try {
+
+                    val stream:InputStream? =
+                        context.contentResolver
+                            .openInputStream(it)
+
+
+                    selectedBitmap =
+                        BitmapFactory
+                            .decodeStream(stream)
+
+
+                    stream?.close()
+
+
+                }catch(e:Exception){
+
+
                 }
+
+
             }
+
         }
-    }
 
-    // Removed GenerativeModel initialization from here to inside the click listener
 
-    // Image Picker
-    val imagePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let {
-            selectedImageUri = it
-            try {
-                val inputStream: InputStream? = context.contentResolver.openInputStream(it)
-                selectedBitmap = BitmapFactory.decodeStream(inputStream)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+
+
+    /*
+        SPEECH
+     */
+
+    val speechRecognizer =
+        remember {
+
+            SpeechRecognizer
+                .createSpeechRecognizer(
+                    context
+                )
+
         }
-    }
 
-    // Speech Recognizer
-    var isListening by remember { mutableStateOf(false) }
-    val speechRecognizer = remember { SpeechRecognizer.createSpeechRecognizer(context) }
-    
-    // Permission launcher for Microphone
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
-        if (isGranted) {
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "id-ID")
+
+
+    val permissionLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ){
+
+            granted ->
+
+            if(granted){
+
+                val intent =
+                    Intent(
+                        RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+                    )
+
+
+                intent.putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE,
+                    "id-ID"
+                )
+
+
+                speechRecognizer
+                    .startListening(intent)
+
+
+                isListening=true
+
             }
-            speechRecognizer.startListening(intent)
-            isListening = true
-        } else {
-            context.showCustomToast("Izin mikrofon diperlukan", ToastType.INFO)
+
         }
-    }
 
-    DisposableEffect(Unit) {
-        speechRecognizer.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) {}
-            override fun onBeginningOfSpeech() {}
-            override fun onRmsChanged(rmsdB: Float) {}
-            override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() { isListening = false }
-            override fun onError(error: Int) {
-                isListening = false
-                context.showCustomToast("Gagal mendengar, coba lagi.", ToastType.ERROR)
-            }
-            override fun onResults(results: Bundle?) {
-                val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                if (!matches.isNullOrEmpty()) {
-                    input = matches[0] // Set transcribed text to input field
+
+
+    DisposableEffect(Unit){
+
+
+        speechRecognizer
+            .setRecognitionListener(
+
+                object:
+                    android.speech.RecognitionListener{
+
+
+                    override fun onReadyForSpeech(
+                        params:Bundle?
+                    ){}
+
+
+                    override fun onBeginningOfSpeech(){}
+
+
+                    override fun onRmsChanged(
+                        rmsdB:Float
+                    ){}
+
+
+                    override fun onBufferReceived(
+                        buffer:ByteArray?
+                    ){}
+
+
+                    override fun onEndOfSpeech(){
+
+                        isListening=false
+
+                    }
+
+
+
+                    override fun onError(
+                        error:Int
+                    ){
+
+                        isListening=false
+
+                    }
+
+
+
+                    override fun onResults(
+                        results:Bundle?
+                    ){
+
+                        val text =
+                            results
+                                ?.getStringArrayList(
+                                    SpeechRecognizer.RESULTS_RECOGNITION
+                                )
+
+
+                        if(!text.isNullOrEmpty()){
+
+                            input=text[0]
+
+                        }
+
+                        isListening=false
+
+                    }
+
+
+
+                    override fun onPartialResults(
+                        partialResults:Bundle?
+                    ){}
+
+
+                    override fun onEvent(
+                        eventType:Int,
+                        params:Bundle?
+                    ){}
+
+
                 }
-            }
-            override fun onPartialResults(partialResults: Bundle?) {}
-            override fun onEvent(eventType: Int, params: Bundle?) {}
-        })
+
+            )
+
+
+
         onDispose {
+
             speechRecognizer.destroy()
+
         }
+
     }
+
+
 
     Scaffold(
+
         topBar = {
+
             TopAppBar(
-                title = { Text("AI Assistant") },
+
+                title = {
+                    Text(
+                        "AI Financial Assistant"
+                    )
+                },
+
+
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showGuidelineDialog = true }) {
-                        Icon(Icons.Filled.Info, contentDescription = "Panduan")
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp)
-        ) {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                reverseLayout = true
-            ) {
-                if (isTyping) {
-                    item { Text("AI sedang berpikir...", modifier = Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                }
-                items(messages.reversed()) { msg ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        horizontalAlignment = if (msg.isUser) Alignment.End else Alignment.Start
-                    ) {
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (msg.isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
-                            ),
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                msg.bitmap?.let {
-                                    Image(
-                                        bitmap = it.asImageBitmap(),
-                                        contentDescription = "Attached Image",
-                                        modifier = Modifier
-                                            .height(150.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .padding(bottom = 8.dp)
-                                    )
-                                }
-                                Text(msg.text)
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Selected Image Preview
-            selectedBitmap?.let { bmp ->
-                Box(modifier = Modifier.padding(8.dp)) {
-                    Image(
-                        bitmap = bmp.asImageBitmap(),
-                        contentDescription = "Preview",
-                        modifier = Modifier
-                            .size(80.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                    )
+
                     IconButton(
-                        onClick = { 
-                            selectedImageUri = null
-                            selectedBitmap = null 
-                        },
-                        modifier = Modifier.align(Alignment.TopEnd)
-                    ) {
-                        Text("X", color = MaterialTheme.colorScheme.error)
-                    }
-                }
-            }
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = { imagePickerLauncher.launch("image/*") }) {
-                    Icon(Icons.Filled.Image, contentDescription = "Pilih Gambar")
-                }
-                
-                IconButton(
-                    onClick = {
-                        if (isListening) {
-                            speechRecognizer.stopListening()
-                            isListening = false
-                        } else {
-                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                        }
-                    }
-                ) {
-                    Icon(
-                        Icons.Filled.Mic, 
-                        contentDescription = "Voice Note",
-                        tint = if (isListening) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                
-                TextField(
-                    value = input,
-                    onValueChange = { input = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text(if (isListening) "Mendengarkan..." else "Tanya ke AI...") },
-                    colors = TextFieldDefaults.colors(
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
-                    ),
-                    shape = RoundedCornerShape(24.dp)
-                )
-                
-                IconButton(
-                    onClick = {
-                        if (input.isNotBlank() || selectedBitmap != null) {
-                            val userMsg = input
-                            val userBmp = selectedBitmap
-                            messages.add(ChatMessage(userMsg, true, selectedImageUri, userBmp))
-                            input = ""
-                            selectedImageUri = null
-                            selectedBitmap = null
-                            isTyping = true
-                            
-                            scope.launch {
-                                try {
-                                        val recordTransactionFunc = defineFunction(
-                                            name = "record_transaction",
-                                            description = "Record an income or expense transaction to the financial database.",
-                                            parameters = listOf(
-                                                Schema(
-                                                    name = "amount",
-                                                    description = "The nominal amount of the transaction",
-                                                    type = FunctionType.NUMBER
-                                                ),
-                                                Schema(
-                                                    name = "category_id",
-                                                    description = "The category ID (1: Kebutuhan Pokok, 2: Makanan & Minuman, 3: Transportasi, 4: Tagihan & Utang, 5: Edukasi, 6: Kesehatan, 7: Hiburan, 8: Belanja, 9: Investasi & Tabungan, 10: Pendapatan Tetap, 11: Pendapatan Tambahan)",
-                                                    type = FunctionType.INTEGER
-                                                ),
-                                                Schema(
-                                                    name = "account_id",
-                                                    description = "The account ID (1: Rekening Utama, 2: Tabungan, 3: E-Wallet, 4: Tunai, 5: Kartu Kredit, 6: Lainnya). Default is 4 (Tunai).",
-                                                    type = FunctionType.INTEGER
-                                                ),
-                                                Schema(
-                                                    name = "type",
-                                                    description = "Either 'INCOME' or 'EXPENSE'",
-                                                    type = FunctionType.STRING
-                                                ),
-                                                Schema(
-                                                    name = "notes",
-                                                    description = "Notes or description of the transaction",
-                                                    type = FunctionType.STRING
-                                                )
-                                            )
-                                        )
+                        onClick = onBack
+                    ){
 
-                                    val aiLearningManager = com.example.cashmanage.ai.AILearningManager(context.applicationContext)
-                                    val learningRules = aiLearningManager.getLearningRules()
-                                    val systemPrompt = "Anda adalah asisten keuangan pribadi yang ahli. Tugas utama Anda adalah membantu pengguna mencatat keuangan. Jika pengguna menyebutkan pengeluaran atau pemasukan, panggillah fungsi record_transaction. Anda HARUS mengklasifikasikannya ke salah satu dari 11 kategori yang tersedia dan 6 akun yang tersedia. Jika akun tidak disebutkan, asumsikan akun Tunai (ID 4). Jawablah dengan ramah dan profesional mengenai konfirmasi pencatatan tersebut.$learningRules"
+                        Icon(
+                            Icons.Default.ArrowBack,
+                            null
+                        )
 
-                                    val dynamicModel = GenerativeModel(
-                                        modelName = "gemini-3.5-flash-lite",
-                                        apiKey = BuildConfig.GEMINI_API_KEY,
-                                        systemInstruction = content { text(systemPrompt) },
-                                        tools = listOf(Tool(listOf(recordTransactionFunc)))
-                                    )
-                                    
-                                    val response = if (userBmp != null) {
-                                        dynamicModel.generateContent(content {
-                                            image(userBmp)
-                                            if (userMsg.isNotBlank()) text(userMsg) else text("Jelaskan gambar ini.")
-                                        })
-                                    } else {
-                                        dynamicModel.generateContent(userMsg)
-                                    }
-                                    
-                                    val functionCall = response.functionCall
-                                    if (functionCall != null && functionCall.name == "record_transaction") {
-                                        val amount = functionCall.args["amount"]?.toString()?.toDoubleOrNull() ?: 0.0
-                                        val categoryId = functionCall.args["category_id"]?.toString()?.toDoubleOrNull()?.toInt() ?: 1
-                                        val accountId = functionCall.args["account_id"]?.toString()?.toDoubleOrNull()?.toInt() ?: 4
-                                        val type = functionCall.args["type"]?.toString()?.uppercase() ?: "EXPENSE"
-                                        val notes = functionCall.args["notes"]?.toString() ?: ""
-                                        
-                                        viewModel.addTransaction(accountId = accountId, categoryId = categoryId, amount = amount, type = type, notes = notes)
-                                        
-                                        // Trigger auto sync
-                                        androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
-                                            "SyncTransactionsWork",
-                                            androidx.work.ExistingWorkPolicy.REPLACE,
-                                            androidx.work.OneTimeWorkRequestBuilder<SyncWorker>().build()
-                                        )
-                                            
-                                        val responseMsg = "Berhasil mencatat transaksi $type sebesar Rp $amount ke database dan melakukan auto-sync ke Spreadsheet!"
-                                        messages.add(ChatMessage(responseMsg, false))
-                                        
-                                        // Save to DB
-                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                            val db = com.example.cashmanage.data.db.AppDatabase.getDatabase(context)
-                                            db.aiHistoryDao().insertHistory(
-                                                com.example.cashmanage.data.db.AIHistoryEntity(
-                                                    prompt = userMsg,
-                                                    response = responseMsg,
-                                                    timestamp = System.currentTimeMillis()
-                                                )
-                                            )
-                                        }
-                                    } else {
-                                        val responseMsg = response.text ?: "No response"
-                                        messages.add(ChatMessage(responseMsg, false))
-                                        
-                                        // Save to DB
-                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                            val db = com.example.cashmanage.data.db.AppDatabase.getDatabase(context)
-                                            db.aiHistoryDao().insertHistory(
-                                                com.example.cashmanage.data.db.AIHistoryEntity(
-                                                    prompt = userMsg,
-                                                    response = responseMsg,
-                                                    timestamp = System.currentTimeMillis()
-                                                )
-                                            )
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    messages.add(ChatMessage("Error: ${e.message}", false))
-                                } finally {
-                                    isTyping = false
-                                }
-                            }
-                        }
-                    },
-                    enabled = !isTyping && (input.isNotBlank() || selectedBitmap != null)
-                ) {
-                    Icon(Icons.Filled.Send, contentDescription = "Kirim", tint = MaterialTheme.colorScheme.primary)
-                }
-            }
-        }
-        
-        if (showGuidelineDialog) {
-            AlertDialog(
-                onDismissRequest = { showGuidelineDialog = false },
-                title = { Text("Panduan Penggunaan AI") },
-                text = {
-                    Column {
-                        Text("Untuk mencatat transaksi dengan benar, pastikan Anda menyebutkan:")
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("1. Nominal Angka (misal: 50.000 atau lima puluh ribu)")
-                        Text("2. Kata Kunci Kategori (Pilih salah satu dari 11 kategori yang tersedia di Pengaturan)")
-                        Text("3. Nama Sumber Rekening (Pilih salah satu dari 6 rekening yang tersedia, jika tidak disebut akan masuk ke Tunai)")
                     }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showGuidelineDialog = false }) { Text("Mengerti") }
+
                 }
+
             )
+
         }
+
+    ){ padding ->
+
+
+
+        Column(
+
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(16.dp)
+
+        ){
+
+
+
+            LazyColumn(
+
+                modifier =
+                    Modifier
+                        .weight(1f)
+
+            ){
+
+
+
+                items(
+                    state.messages
+                ){ msg ->
+
+
+
+                    Row(
+
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(5.dp),
+
+
+                        horizontalArrangement =
+                        if(msg.isUser)
+                            Arrangement.End
+                        else
+                            Arrangement.Start
+
+
+                    ){
+
+
+
+                        Card(
+
+                            shape =
+                            RoundedCornerShape(
+                                16.dp
+                            )
+
+                        ){
+
+
+                            Column(
+
+                                modifier =
+                                    Modifier
+                                        .padding(12.dp)
+
+                            ){
+
+
+
+                                msg.bitmap?.let {
+
+
+                                    Image(
+
+                                        bitmap =
+                                        it.asImageBitmap(),
+
+
+                                        contentDescription =
+                                        null,
+
+
+                                        modifier =
+                                            Modifier
+                                                .size(150.dp)
+                                                .clip(
+                                                    RoundedCornerShape(
+                                                        10.dp
+                                                    )
+                                                )
+
+                                    )
+
+                                }
+
+
+
+                                Text(
+                                    msg.text
+                                )
+
+                            }
+
+
+                        }
+
+
+
+                    }
+
+
+                }
+
+
+
+                if(state.isLoading){
+
+
+                    item {
+
+                        Text(
+                            "AI sedang menganalisa..."
+                        )
+
+                    }
+
+
+                }
+
+
+
+            }
+
+
+
+            /*
+                TRANSACTION PREVIEW
+             */
+
+
+            state.pendingTransaction?.let {
+
+
+                Card(
+
+                    modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical=8.dp)
+
+                ){
+
+
+                    Column(
+
+                        modifier =
+                            Modifier.padding(12.dp)
+
+                    ){
+
+
+                        Text(
+                            "Konfirmasi transaksi",
+                            style =
+                            MaterialTheme
+                                .typography
+                                .titleMedium
+                        )
+
+
+                        Text(
+                            "Jenis : ${it.type}"
+                        )
+
+
+                        Text(
+                            "Kategori ID : ${it.categoryId}"
+                        )
+
+
+                        Text(
+                            "Rekening ID : ${it.accountId}"
+                        )
+
+
+                        Text(
+                            "Nominal : Rp ${it.amount}"
+                        )
+
+
+                        Text(
+                            "Catatan : ${it.notes}"
+                        )
+
+
+
+                        Row{
+
+
+                            Button(
+
+                                onClick={
+                                    viewModel
+                                        .confirmTransaction()
+                                }
+
+                            ){
+
+                                Text(
+                                    "Simpan"
+                                )
+
+                            }
+
+
+
+                            Spacer(
+                                Modifier.width(8.dp)
+                            )
+
+
+                            OutlinedButton(
+
+                                onClick = {
+                                    viewModel
+                                        .cancelTransaction()
+                                }
+
+                            ){
+
+                                Text(
+                                    "Batal"
+                                )
+
+                            }
+
+
+                        }
+
+
+
+                    }
+
+
+                }
+
+
+            }
+
+
+
+
+
+
+            selectedBitmap?.let {
+
+
+                Image(
+
+                    bitmap =
+                    it.asImageBitmap(),
+
+
+                    contentDescription =
+                    null,
+
+
+                    modifier =
+                        Modifier
+                            .size(80.dp)
+
+                )
+
+            }
+
+
+
+
+
+
+            Row(
+
+                verticalAlignment =
+                Alignment.CenterVertically
+
+            ){
+
+
+
+                IconButton(
+
+                    onClick = {
+                        imagePicker.launch(
+                            "image/*"
+                        )
+                    }
+
+                ){
+
+                    Icon(
+                        Icons.Default.Image,
+                        null
+                    )
+
+                }
+
+
+
+
+                IconButton(
+
+                    onClick={
+
+
+                        if(isListening){
+
+                            speechRecognizer
+                                .stopListening()
+
+                            isListening=false
+
+
+                        }else{
+
+
+                            permissionLauncher
+                                .launch(
+                                    Manifest.permission.RECORD_AUDIO
+                                )
+
+                        }
+
+
+                    }
+
+                ){
+
+
+                    Icon(
+                        Icons.Default.Mic,
+                        null
+                    )
+
+
+                }
+
+
+
+
+
+                TextField(
+
+                    value=input,
+
+
+                    onValueChange={
+                        input=it
+                    },
+
+
+                    modifier =
+                        Modifier
+                            .weight(1f),
+
+
+                    placeholder = {
+
+                        Text(
+                            "Contoh: beli makan 25 ribu cash"
+                        )
+
+                    }
+
+
+                )
+
+
+
+
+
+                IconButton(
+
+
+                    enabled =
+                    input.isNotBlank()
+                    ||
+                    selectedBitmap!=null,
+
+
+                    onClick={
+
+
+                        val text=input
+
+                        val img=selectedBitmap
+
+
+                        input=""
+                        selectedBitmap=null
+
+
+
+                        viewModel
+                            .sendMessage(
+                                text,
+                                img
+                            )
+
+                    }
+
+
+                ){
+
+
+                    Icon(
+                        Icons.Default.Send,
+                        null
+                    )
+
+
+                }
+
+
+
+            }
+
+
+        }
+
+
     }
+
+
+
 }
