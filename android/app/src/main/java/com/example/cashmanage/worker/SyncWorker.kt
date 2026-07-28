@@ -19,6 +19,10 @@ class SyncWorker(
             var spreadsheetId = prefs.getString("spreadsheet_id", null)
             
             val allTransactions = transactionDao.getAllTransactionsList()
+            val allBudgets = database.budgetDao().getAllBudgetsList()
+            val allGoals = database.savingGoalDao().getAllSavingGoalsList()
+            val allCategories = database.categoryDao().getAllCategoriesList()
+            val allAccounts = database.accountDao().getAllAccountsList()
             
             // Check if user is signed in
             val authManager = com.example.cashmanage.auth.GoogleAuthManager(applicationContext)
@@ -31,17 +35,24 @@ class SyncWorker(
             val sheetsService = com.example.cashmanage.data.api.GoogleSheetsService(applicationContext, account)
             
             if (spreadsheetId == null) {
-                spreadsheetId = sheetsService.createSpreadsheet("Cash Manage Transactions")
+                spreadsheetId = sheetsService.createSpreadsheet("JustSayIt. Transactions")
                 prefs.edit().putString("spreadsheet_id", spreadsheetId).apply()
             }
             
             if (spreadsheetId != null) {
-                // Overwrite all transactions to Google Sheets to sync edits and deletions
-                sheetsService.overwriteTransactions(spreadsheetId, allTransactions)
+                // Sync all data to Google Sheets
+                val finalBudgets = database.budgetDao().getAllBudgetsList()
+
+                // 3. Sync all data to Google Sheets
+                sheetsService.syncAllData(spreadsheetId, allTransactions, finalBudgets, allGoals, allCategories, allAccounts)
                 
-                // Mark all as synced
+                // Mark all as synced (if needed)
                 val updated = allTransactions.map { it.copy(isSynced = true) }
                 transactionDao.updateTransactions(updated)
+                
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    com.example.cashmanage.util.UIUtils.showCustomToast(applicationContext, "Sinkronisasi Spreadsheet berhasil")
+                }
             }
             
             return Result.success()
@@ -54,7 +65,8 @@ class SyncWorker(
             val notification = android.app.Notification.Builder(applicationContext, "sync_error")
                 .setContentTitle("Gagal Sync ke Spreadsheet")
                 .setContentText(e.toString() + " " + (e.message ?: "Unknown error"))
-                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setSmallIcon(com.example.cashmanage.R.drawable.ic_justsayit_logo)
+                .setColor(android.graphics.Color.parseColor("#FFBD59"))
                 .build()
             notificationManager.notify(999, notification)
             return Result.retry()

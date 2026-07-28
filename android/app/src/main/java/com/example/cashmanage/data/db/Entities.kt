@@ -55,6 +55,7 @@ data class SavingGoalEntity(
     val targetAmount: Double,
     val currentAmount: Double,
     val targetDate: Long?,
+    val assetGroup: String, // LIQUID or NON_LIQUID
     val isSynced: Boolean = false
 )
 
@@ -63,7 +64,8 @@ data class BudgetEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val categoryId: Int,
     val limitAmount: Double,
-    val period: String, // MONTHLY, WEEKLY
+    val month: Int,
+    val year: Int,
     val isSynced: Boolean = false
 )
 

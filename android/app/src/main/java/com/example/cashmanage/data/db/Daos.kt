@@ -24,6 +24,21 @@ interface AccountDao {
 
     @Query("SELECT * FROM accounts WHERE userId = :userId")
     fun getAccounts(userId: String): Flow<List<AccountEntity>>
+
+    @Query("SELECT * FROM accounts WHERE name = :name LIMIT 1")
+    suspend fun getAccountByName(name: String): AccountEntity?
+
+    @Query("SELECT * FROM accounts")
+    fun getAllAccounts(): Flow<List<AccountEntity>>
+    
+    @Query("SELECT * FROM accounts")
+    suspend fun getAllAccountsList(): List<AccountEntity>
+
+    @Update
+    suspend fun updateAccount(account: AccountEntity)
+
+    @Delete
+    suspend fun deleteAccount(account: AccountEntity)
 }
 
 @Dao
@@ -33,6 +48,21 @@ interface CategoryDao {
 
     @Query("SELECT * FROM categories WHERE type = :type")
     fun getCategoriesByType(type: String): Flow<List<CategoryEntity>>
+
+    @Query("SELECT * FROM categories")
+    fun getAllCategories(): Flow<List<CategoryEntity>>
+    
+    @Query("SELECT * FROM categories")
+    suspend fun getAllCategoriesList(): List<CategoryEntity>
+
+    @Query("SELECT * FROM categories WHERE name = :name LIMIT 1")
+    suspend fun getCategoryByName(name: String): CategoryEntity?
+
+    @Update
+    suspend fun updateCategory(category: CategoryEntity)
+
+    @Delete
+    suspend fun deleteCategory(category: CategoryEntity)
 }
 
 @Dao
@@ -48,6 +78,9 @@ interface TransactionDao {
     
     @Query("SELECT * FROM transactions WHERE isSynced = 0")
     suspend fun getUnsyncedTransactions(): List<TransactionEntity>
+
+    @Query("DELETE FROM transactions WHERE isSynced = 1")
+    suspend fun deleteSyncedTransactions()
 
     @Update
     suspend fun updateTransactions(transactions: List<TransactionEntity>)
@@ -66,6 +99,12 @@ interface SavingGoalDao {
 
     @Query("SELECT * FROM saving_goals")
     fun getAllSavingGoals(): Flow<List<SavingGoalEntity>>
+    
+    @Query("SELECT * FROM saving_goals")
+    suspend fun getAllSavingGoalsList(): List<SavingGoalEntity>
+
+    @Query("DELETE FROM saving_goals WHERE isSynced = 1")
+    suspend fun deleteSyncedSavingGoals()
 }
 
 @Dao
@@ -73,8 +112,26 @@ interface BudgetDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBudget(budget: BudgetEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBudgets(budgets: List<BudgetEntity>)
+
+    @Update
+    suspend fun updateBudget(budget: BudgetEntity)
+
+    @Delete
+    suspend fun deleteBudget(budget: BudgetEntity)
+
+    @Query("DELETE FROM budgets")
+    suspend fun clearAllBudgets()
+
     @Query("SELECT * FROM budgets")
     fun getAllBudgets(): Flow<List<BudgetEntity>>
+    
+    @Query("SELECT * FROM budgets")
+    suspend fun getAllBudgetsList(): List<BudgetEntity>
+
+    @Query("DELETE FROM budgets WHERE isSynced = 1")
+    suspend fun deleteSyncedBudgets()
 }
 
 @Dao
@@ -99,4 +156,13 @@ interface SpreadsheetDao {
 
     @Query("SELECT * FROM cells WHERE sheetId = :sheetId")
     fun getCellsBySheet(sheetId: Int): Flow<List<CellEntity>>
+}
+
+@Dao
+interface AIHistoryDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertHistory(history: AIHistoryEntity): Long
+
+    @Query("SELECT * FROM ai_history ORDER BY timestamp ASC")
+    suspend fun getAllHistoryList(): List<AIHistoryEntity>
 }

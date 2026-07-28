@@ -34,6 +34,52 @@ class FinancialRepository(private val database: AppDatabase) {
         database.budgetDao().insertBudget(budget)
     }
 
+    suspend fun updateBudget(budget: BudgetEntity) {
+        database.budgetDao().updateBudget(budget)
+    }
+
+    suspend fun deleteBudget(budget: BudgetEntity) {
+        database.budgetDao().deleteBudget(budget)
+    }
+    
+    suspend fun clearBudgets() {
+        database.budgetDao().clearAllBudgets()
+    }
+    
+    suspend fun insertBudgets(budgets: List<BudgetEntity>) {
+        database.budgetDao().insertBudgets(budgets)
+    }
+
+    // --- Accounts ---
+    fun getAllAccounts(): Flow<List<AccountEntity>> = database.accountDao().getAllAccounts()
+
+    suspend fun addAccount(account: AccountEntity) {
+        database.accountDao().insertAccount(account)
+    }
+    
+    suspend fun updateAccount(account: AccountEntity) {
+        database.accountDao().updateAccount(account)
+    }
+    
+    suspend fun deleteAccount(account: AccountEntity) {
+        database.accountDao().deleteAccount(account)
+    }
+
+    // --- Categories ---
+    fun getAllCategories(): Flow<List<CategoryEntity>> = database.categoryDao().getAllCategories()
+
+    suspend fun addCategory(category: CategoryEntity) {
+        database.categoryDao().insertCategory(category)
+    }
+    
+    suspend fun updateCategory(category: CategoryEntity) {
+        database.categoryDao().updateCategory(category)
+    }
+    
+    suspend fun deleteCategory(category: CategoryEntity) {
+        database.categoryDao().deleteCategory(category)
+    }
+
     // --- Spreadsheets ---
     fun getAllSpreadsheets(): Flow<List<SpreadsheetEntity>> = database.spreadsheetDao().getAllSpreadsheets()
     

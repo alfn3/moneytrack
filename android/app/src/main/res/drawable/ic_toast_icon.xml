@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="oval">
+            <gradient
+                android:startColor="#FFBD59"
+                android:endColor="#FFE084"
+                android:angle="135" />
+        </shape>
+    </item>
+    <item android:drawable="@drawable/ic_justsayit_logo" android:gravity="center" android:bottom="4dp" android:top="4dp" android:left="4dp" android:right="4dp"/>
+</layer-list>

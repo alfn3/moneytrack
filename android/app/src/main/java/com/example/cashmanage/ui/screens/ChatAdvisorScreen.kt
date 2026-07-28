@@ -11,6 +11,8 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import com.example.cashmanage.ui.util.showCustomToast
+import com.example.cashmanage.ui.util.ToastType
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -18,6 +20,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
@@ -62,6 +66,20 @@ fun ChatAdvisorScreen(
     var isTyping by remember { mutableStateOf(false) }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     var selectedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var showGuidelineDialog by remember { mutableStateOf(false) }
+
+    // Load History
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val history = com.example.cashmanage.data.db.AppDatabase.getDatabase(context).aiHistoryDao().getAllHistoryList()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                history.forEach { h ->
+                    messages.add(ChatMessage(h.prompt, true))
+                    messages.add(ChatMessage(h.response, false))
+                }
+            }
+        }
+    }
 
     // Removed GenerativeModel initialization from here to inside the click listener
 
@@ -92,7 +110,7 @@ fun ChatAdvisorScreen(
             speechRecognizer.startListening(intent)
             isListening = true
         } else {
-            Toast.makeText(context, "Izin mikrofon diperlukan", Toast.LENGTH_SHORT).show()
+            context.showCustomToast("Izin mikrofon diperlukan", ToastType.INFO)
         }
     }
 
@@ -105,7 +123,7 @@ fun ChatAdvisorScreen(
             override fun onEndOfSpeech() { isListening = false }
             override fun onError(error: Int) {
                 isListening = false
-                Toast.makeText(context, "Gagal mendengar, coba lagi.", Toast.LENGTH_SHORT).show()
+                context.showCustomToast("Gagal mendengar, coba lagi.", ToastType.ERROR)
             }
             override fun onResults(results: Bundle?) {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -126,7 +144,14 @@ fun ChatAdvisorScreen(
             TopAppBar(
                 title = { Text("AI Assistant") },
                 navigationIcon = {
-                    Button(onClick = onBack) { Text("Back") }
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showGuidelineDialog = true }) {
+                        Icon(Icons.Filled.Info, contentDescription = "Panduan")
+                    }
                 }
             )
         }
@@ -247,37 +272,46 @@ fun ChatAdvisorScreen(
                             
                             scope.launch {
                                 try {
-                                    val recordTransactionFunc = defineFunction(
-                                        name = "record_transaction",
-                                        description = "Record an income or expense transaction to the financial database.",
-                                        parameters = listOf(
-                                            Schema(
-                                                name = "amount",
-                                                description = "The nominal amount of the transaction",
-                                                type = FunctionType.NUMBER
-                                            ),
-                                            Schema(
-                                                name = "category_id",
-                                                description = "The category ID (1: Food, 2: Transport, 3: Salary, 4: Entertainment, 5: Others)",
-                                                type = FunctionType.INTEGER
-                                            ),
-                                            Schema(
-                                                name = "type",
-                                                description = "Either 'INCOME' or 'EXPENSE'",
-                                                type = FunctionType.STRING
-                                            ),
-                                            Schema(
-                                                name = "notes",
-                                                description = "Notes or description of the transaction",
-                                                type = FunctionType.STRING
+                                        val recordTransactionFunc = defineFunction(
+                                            name = "record_transaction",
+                                            description = "Record an income or expense transaction to the financial database.",
+                                            parameters = listOf(
+                                                Schema(
+                                                    name = "amount",
+                                                    description = "The nominal amount of the transaction",
+                                                    type = FunctionType.NUMBER
+                                                ),
+                                                Schema(
+                                                    name = "category_id",
+                                                    description = "The category ID (1: Kebutuhan Pokok, 2: Makanan & Minuman, 3: Transportasi, 4: Tagihan & Utang, 5: Edukasi, 6: Kesehatan, 7: Hiburan, 8: Belanja, 9: Investasi & Tabungan, 10: Pendapatan Tetap, 11: Pendapatan Tambahan)",
+                                                    type = FunctionType.INTEGER
+                                                ),
+                                                Schema(
+                                                    name = "account_id",
+                                                    description = "The account ID (1: Rekening Utama, 2: Tabungan, 3: E-Wallet, 4: Tunai, 5: Kartu Kredit, 6: Lainnya). Default is 4 (Tunai).",
+                                                    type = FunctionType.INTEGER
+                                                ),
+                                                Schema(
+                                                    name = "type",
+                                                    description = "Either 'INCOME' or 'EXPENSE'",
+                                                    type = FunctionType.STRING
+                                                ),
+                                                Schema(
+                                                    name = "notes",
+                                                    description = "Notes or description of the transaction",
+                                                    type = FunctionType.STRING
+                                                )
                                             )
                                         )
-                                    )
+
+                                    val aiLearningManager = com.example.cashmanage.ai.AILearningManager(context.applicationContext)
+                                    val learningRules = aiLearningManager.getLearningRules()
+                                    val systemPrompt = "Anda adalah asisten keuangan pribadi yang ahli. Tugas utama Anda adalah membantu pengguna mencatat keuangan. Jika pengguna menyebutkan pengeluaran atau pemasukan, panggillah fungsi record_transaction. Anda HARUS mengklasifikasikannya ke salah satu dari 11 kategori yang tersedia dan 6 akun yang tersedia. Jika akun tidak disebutkan, asumsikan akun Tunai (ID 4). Jawablah dengan ramah dan profesional mengenai konfirmasi pencatatan tersebut.$learningRules"
 
                                     val dynamicModel = GenerativeModel(
                                         modelName = "gemini-3.5-flash-lite",
                                         apiKey = BuildConfig.GEMINI_API_KEY,
-                                        systemInstruction = content { text("Anda adalah asisten keuangan pribadi yang ahli. Tugas utama Anda adalah membantu pengguna mencatat keuangan (pemasukan dan pengeluaran), memberikan analisis tren keuangan, serta saran finansial yang cerdas dan praktis. Jawablah dengan ramah dan profesional. Tolak dengan sopan jika pengguna bertanya di luar topik keuangan atau manajemen kas. Jika pengguna menyebutkan pengeluaran atau pemasukan dengan nominal, panggillah fungsi record_transaction.") },
+                                        systemInstruction = content { text(systemPrompt) },
                                         tools = listOf(Tool(listOf(recordTransactionFunc)))
                                     )
                                     
@@ -294,10 +328,11 @@ fun ChatAdvisorScreen(
                                     if (functionCall != null && functionCall.name == "record_transaction") {
                                         val amount = functionCall.args["amount"]?.toString()?.toDoubleOrNull() ?: 0.0
                                         val categoryId = functionCall.args["category_id"]?.toString()?.toDoubleOrNull()?.toInt() ?: 1
+                                        val accountId = functionCall.args["account_id"]?.toString()?.toDoubleOrNull()?.toInt() ?: 4
                                         val type = functionCall.args["type"]?.toString()?.uppercase() ?: "EXPENSE"
                                         val notes = functionCall.args["notes"]?.toString() ?: ""
                                         
-                                        viewModel.addTransaction(accountId = 1, categoryId, amount, type, notes)
+                                        viewModel.addTransaction(accountId = accountId, categoryId = categoryId, amount = amount, type = type, notes = notes)
                                         
                                         // Trigger auto sync
                                         androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
@@ -306,9 +341,35 @@ fun ChatAdvisorScreen(
                                             androidx.work.OneTimeWorkRequestBuilder<SyncWorker>().build()
                                         )
                                             
-                                        messages.add(ChatMessage("Berhasil mencatat transaksi $type sebesar Rp $amount ke database dan melakukan auto-sync ke Spreadsheet!", false))
+                                        val responseMsg = "Berhasil mencatat transaksi $type sebesar Rp $amount ke database dan melakukan auto-sync ke Spreadsheet!"
+                                        messages.add(ChatMessage(responseMsg, false))
+                                        
+                                        // Save to DB
+                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            val db = com.example.cashmanage.data.db.AppDatabase.getDatabase(context)
+                                            db.aiHistoryDao().insertHistory(
+                                                com.example.cashmanage.data.db.AIHistoryEntity(
+                                                    prompt = userMsg,
+                                                    response = responseMsg,
+                                                    timestamp = System.currentTimeMillis()
+                                                )
+                                            )
+                                        }
                                     } else {
-                                        messages.add(ChatMessage(response.text ?: "No response", false))
+                                        val responseMsg = response.text ?: "No response"
+                                        messages.add(ChatMessage(responseMsg, false))
+                                        
+                                        // Save to DB
+                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            val db = com.example.cashmanage.data.db.AppDatabase.getDatabase(context)
+                                            db.aiHistoryDao().insertHistory(
+                                                com.example.cashmanage.data.db.AIHistoryEntity(
+                                                    prompt = userMsg,
+                                                    response = responseMsg,
+                                                    timestamp = System.currentTimeMillis()
+                                                )
+                                            )
+                                        }
                                     }
                                 } catch (e: Exception) {
                                     messages.add(ChatMessage("Error: ${e.message}", false))
@@ -323,6 +384,25 @@ fun ChatAdvisorScreen(
                     Icon(Icons.Filled.Send, contentDescription = "Kirim", tint = MaterialTheme.colorScheme.primary)
                 }
             }
+        }
+        
+        if (showGuidelineDialog) {
+            AlertDialog(
+                onDismissRequest = { showGuidelineDialog = false },
+                title = { Text("Panduan Penggunaan AI") },
+                text = {
+                    Column {
+                        Text("Untuk mencatat transaksi dengan benar, pastikan Anda menyebutkan:")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("1. Nominal Angka (misal: 50.000 atau lima puluh ribu)")
+                        Text("2. Kata Kunci Kategori (Pilih salah satu dari 11 kategori yang tersedia di Pengaturan)")
+                        Text("3. Nama Sumber Rekening (Pilih salah satu dari 6 rekening yang tersedia, jika tidak disebut akan masuk ke Tunai)")
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showGuidelineDialog = false }) { Text("Mengerti") }
+                }
+            )
         }
     }
 }
